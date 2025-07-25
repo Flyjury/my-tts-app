@@ -16,6 +16,7 @@
         .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: #4f46e5; }
         input:checked + .slider:before { transform: translateX(26px); }
+        input:disabled + .slider { background-color: #e5e7eb; cursor: not-allowed; }
         /* Custom progress bar */
         progress { border-radius: 7px; width: 100%; height: 10px; }
         progress::-webkit-progress-bar { background-color: #e5e7eb; border-radius: 7px; }
@@ -83,7 +84,7 @@
                 </div>
                 <div>
                     <label for="voiceFilter" class="block text-sm font-medium text-gray-700 mb-2">Voice</label>
-                    <input type="text" id="voiceFilter" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm mb-2" placeholder="Filter voices (e.g., Wavenet)" disabled>
+                    <input type="text" id="voiceFilter" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm mb-2" placeholder="Filter voices (e.g., Chirp, Studio)" disabled>
                     <select id="voiceSelect" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm" disabled><option>Select language first</option></select>
                 </div>
             </div>
@@ -125,13 +126,13 @@
                             <p class="text-xs text-gray-500 mt-1">Simulates audio playback on different devices.</p>
                         </div>
                         <div>
-                            <label for="stylePromptInput" class="block text-sm font-medium text-gray-700 mt-2">Style Prompt (for Studio voices)</label>
-                            <input type="text" id="stylePromptInput" class="w-full p-3 mt-1 border border-gray-300 rounded-lg shadow-sm" placeholder="e.g., speaking with a calm voice">
-                            <p class="text-xs text-gray-500 mt-1">Describe the desired speaking style. Works best with Studio voices.</p>
+                            <label for="stylePromptInput" class="block text-sm font-medium text-gray-700 mt-2">Style Prompt</label>
+                            <input type="text" id="stylePromptInput" class="w-full p-3 mt-1 border border-gray-300 rounded-lg shadow-sm" placeholder="e.g., speaking excitedly">
+                            <p class="text-xs text-gray-500 mt-1">Describe the desired speaking style. Works best with Chirp voices.</p>
                         </div>
                     </div>
                 </div>
-                 <p id="ssmlWarning" class="text-center text-sm text-amber-700 bg-amber-100 p-3 rounded-lg hidden mt-4">Pitch, speed, and volume controls are disabled. Use SSML tags like &lt;prosody&gt; for fine-tuning.</p>
+                 <p id="controlsWarning" class="text-center text-sm text-amber-700 bg-amber-100 p-3 rounded-lg hidden mt-4"></p>
             </div>
 
             <!-- Action Buttons & Player -->
@@ -181,7 +182,7 @@
             effectsProfile: document.getElementById('effectsProfile'),
             stylePromptInput: document.getElementById('stylePromptInput'),
             audioControls: document.getElementById('audioControls'),
-            ssmlWarning: document.getElementById('ssmlWarning'),
+            controlsWarning: document.getElementById('controlsWarning'),
             generateButton: document.getElementById('generateButton'),
             status: document.getElementById('status'),
             player: document.getElementById('player'),
@@ -202,7 +203,8 @@
         elements.saveApiKey.addEventListener('change', handleSaveApiKey);
         elements.helpButton.addEventListener('click', () => elements.helpModal.classList.remove('hidden'));
         elements.closeHelpModal.addEventListener('click', () => elements.helpModal.classList.add('hidden'));
-        elements.ssmlToggle.addEventListener('change', toggleSSMLView);
+        elements.ssmlToggle.addEventListener('change', updateControlStates);
+        elements.stylePromptInput.addEventListener('input', updateControlStates);
         elements.ssmlExampleButton.addEventListener('click', insertSSMLExample);
         elements.languageSelect.addEventListener('change', () => populateVoiceOptions());
         elements.voiceFilter.addEventListener('input', () => populateVoiceOptions(elements.voiceFilter.value));
@@ -251,7 +253,7 @@
                 showStatus('Please enter an API key.', 'error');
                 return;
             }
-            handleSaveApiKey(); // Save if checkbox is checked
+            handleSaveApiKey();
             showStatus('Loading voices...', 'loading');
             setGenerateState('loading');
 
@@ -320,19 +322,35 @@
 
             const isSSML = elements.ssmlToggle.checked;
             const stylePromptText = elements.stylePromptInput.value.trim();
-            
-            const requestBody = {
-                input: { [isSSML ? 'ssml' : 'text']: text },
-                voice: { languageCode: elements.languageSelect.value, name: elements.voiceSelect.value },
-                audioConfig: {
-                    audioEncoding: 'MP3',
-                    speakingRate: isSSML ? undefined : parseFloat(elements.speed.value),
-                    pitch: isSSML ? undefined : parseFloat(elements.pitch.value),
-                    volumeGainDb: isSSML ? undefined : parseFloat(elements.volume.value),
-                    effectsProfileId: elements.effectsProfile.value ? [elements.effectsProfile.value] : undefined,
-                },
-                ...(stylePromptText && { stylePrompt: stylePromptText })
+            let requestBody;
+
+            const commonVoice = { languageCode: elements.languageSelect.value, name: elements.voiceSelect.value };
+            const commonAudioConfig = {
+                audioEncoding: 'MP3',
+                effectsProfileId: elements.effectsProfile.value ? [elements.effectsProfile.value] : undefined,
             };
+            
+            if (stylePromptText) {
+                requestBody = {
+                    voice: commonVoice,
+                    audioConfig: commonAudioConfig,
+                    textPlusStyleInfo: {
+                        text: text,
+                        stylePrompt: stylePromptText
+                    }
+                };
+            } else {
+                requestBody = {
+                    input: { [isSSML ? 'ssml' : 'text']: text },
+                    voice: commonVoice,
+                    audioConfig: {
+                        ...commonAudioConfig,
+                        speakingRate: isSSML ? undefined : parseFloat(elements.speed.value),
+                        pitch: isSSML ? undefined : parseFloat(elements.pitch.value),
+                        volumeGainDb: isSSML ? undefined : parseFloat(elements.volume.value),
+                    }
+                };
+            }
 
             try {
                 const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
@@ -340,7 +358,10 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
-                if (!response.ok) throw new Error((await response.json()).error.message);
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error.message || 'API request failed');
+                }
                 const data = await response.json();
                 const binaryString = window.atob(data.audioContent);
                 const len = binaryString.length;
@@ -366,12 +387,32 @@
             a.href = url;
             a.download = 'speech.mp3';
             document.body.appendChild(a);
-            a.click();
+a.click();
             window.URL.revokeObjectURL(url);
             a.remove();
         }
 
         // --- UI State Management ---
+
+        function updateControlStates() {
+            const isSSML = elements.ssmlToggle.checked;
+            const hasStylePrompt = elements.stylePromptInput.value.trim() !== '';
+
+            elements.ssmlToggle.disabled = hasStylePrompt;
+            elements.stylePromptInput.disabled = isSSML;
+
+            const disableBasicControls = isSSML || hasStylePrompt;
+            elements.audioControls.style.display = disableBasicControls ? 'none' : 'block';
+            
+            elements.controlsWarning.style.display = 'none';
+            if (isSSML) {
+                elements.controlsWarning.textContent = 'Pitch, speed, and volume controls are disabled. Use SSML tags like <prosody> for fine-tuning.';
+                elements.controlsWarning.style.display = 'block';
+            } else if (hasStylePrompt) {
+                elements.controlsWarning.textContent = 'Pitch, speed, volume, and SSML are disabled when using a Style Prompt.';
+                elements.controlsWarning.style.display = 'block';
+            }
+        }
 
         function checkCanGenerate() {
             elements.generateButton.disabled = !(elements.textToSpeak.value.trim() && elements.voiceSelect.value);
@@ -400,12 +441,6 @@
             const percentage = (elements.audioPlayer.currentTime / elements.audioPlayer.duration) * 100;
             elements.progressBar.value = percentage;
         }
-
-        function toggleSSMLView() {
-            const isSSML = elements.ssmlToggle.checked;
-            elements.audioControls.style.display = isSSML ? 'none' : 'block';
-            elements.ssmlWarning.style.display = isSSML ? 'block' : 'none';
-        }
         
         function insertSSMLExample() {
             elements.textToSpeak.value = `<speak>
@@ -415,10 +450,8 @@
     <p>This is the first paragraph.</p><p>This is the second.</p>
     I can also change my pitch and rate <prosody rate="slow" pitch="-2st">for a few words.</prosody>
 </speak>`;
-            if (!elements.ssmlToggle.checked) {
-                elements.ssmlToggle.checked = true;
-                toggleSSMLView();
-            }
+            elements.ssmlToggle.checked = true;
+            updateControlStates();
         }
 
         function resetVoiceSelection() {
@@ -442,7 +475,7 @@
                 elements.status.appendChild(loadingText);
             } else {
                 const p = document.createElement('p');
-                p.className = type === 'error' ? 'text-red-600' : (type === 'success' ? 'text-green-600' : 'text-gray-600');
+                p.className = type === 'error' ? 'text-red-600 font-semibold' : (type === 'success' ? 'text-green-600 font-semibold' : 'text-gray-600');
                 p.textContent = message;
                 elements.status.appendChild(p);
             }
