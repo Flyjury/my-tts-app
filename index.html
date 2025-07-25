@@ -124,6 +124,11 @@
                             </select>
                             <p class="text-xs text-gray-500 mt-1">Simulates audio playback on different devices.</p>
                         </div>
+                        <div>
+                            <label for="stylePromptInput" class="block text-sm font-medium text-gray-700 mt-2">Style Prompt (for Studio voices)</label>
+                            <input type="text" id="stylePromptInput" class="w-full p-3 mt-1 border border-gray-300 rounded-lg shadow-sm" placeholder="e.g., speaking with a calm voice">
+                            <p class="text-xs text-gray-500 mt-1">Describe the desired speaking style. Works best with Studio voices.</p>
+                        </div>
                     </div>
                 </div>
                  <p id="ssmlWarning" class="text-center text-sm text-amber-700 bg-amber-100 p-3 rounded-lg hidden mt-4">Pitch, speed, and volume controls are disabled. Use SSML tags like &lt;prosody&gt; for fine-tuning.</p>
@@ -174,6 +179,7 @@
             pitchValue: document.getElementById('pitchValue'),
             volumeValue: document.getElementById('volumeValue'),
             effectsProfile: document.getElementById('effectsProfile'),
+            stylePromptInput: document.getElementById('stylePromptInput'),
             audioControls: document.getElementById('audioControls'),
             ssmlWarning: document.getElementById('ssmlWarning'),
             generateButton: document.getElementById('generateButton'),
@@ -212,7 +218,7 @@
         elements.audioPlayer.addEventListener('ended', () => setPlaybackState(false));
         elements.audioPlayer.addEventListener('timeupdate', updateProgressBar);
         
-        const inputsToMonitor = [elements.textToSpeak, elements.ssmlToggle, elements.languageSelect, elements.voiceSelect, elements.speed, elements.pitch, elements.volume, elements.effectsProfile];
+        const inputsToMonitor = [elements.textToSpeak, elements.ssmlToggle, elements.languageSelect, elements.voiceSelect, elements.speed, elements.pitch, elements.volume, elements.effectsProfile, elements.stylePromptInput];
         inputsToMonitor.forEach(input => input.addEventListener('input', invalidateAudio));
 
         // Slider value displays
@@ -250,7 +256,7 @@
             setGenerateState('loading');
 
             try {
-                const response = await fetch(`https://texttospeech.googleapis.com/v1/voices?key=${apiKey}`);
+                const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/voices?key=${apiKey}`);
                 if (!response.ok) throw new Error((await response.json()).error.message);
                 const data = await response.json();
                 voices = data.voices;
@@ -313,6 +319,8 @@
             setGenerateState('loading');
 
             const isSSML = elements.ssmlToggle.checked;
+            const stylePromptText = elements.stylePromptInput.value.trim();
+            
             const requestBody = {
                 input: { [isSSML ? 'ssml' : 'text']: text },
                 voice: { languageCode: elements.languageSelect.value, name: elements.voiceSelect.value },
@@ -322,11 +330,12 @@
                     pitch: isSSML ? undefined : parseFloat(elements.pitch.value),
                     volumeGainDb: isSSML ? undefined : parseFloat(elements.volume.value),
                     effectsProfileId: elements.effectsProfile.value ? [elements.effectsProfile.value] : undefined,
-                }
+                },
+                ...(stylePromptText && { stylePrompt: stylePromptText })
             };
 
             try {
-                const response = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`, {
+                const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
