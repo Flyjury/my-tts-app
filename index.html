@@ -330,16 +330,21 @@
                 effectsProfileId: elements.effectsProfile.value ? [elements.effectsProfile.value] : undefined,
             };
             
+            // CORRECTED: The structure for the request body is now built correctly.
             if (stylePromptText) {
+                // Style prompts cannot be used with SSML.
                 requestBody = {
+                    input: {
+                        textPlusStyleInfo: {
+                            text: text,
+                            stylePrompt: stylePromptText
+                        }
+                    },
                     voice: commonVoice,
-                    audioConfig: commonAudioConfig,
-                    textPlusStyleInfo: {
-                        text: text,
-                        stylePrompt: stylePromptText
-                    }
+                    audioConfig: commonAudioConfig
                 };
             } else {
+                // Standard request for either plain text or SSML.
                 requestBody = {
                     input: { [isSSML ? 'ssml' : 'text']: text },
                     voice: commonVoice,
@@ -387,7 +392,7 @@
             a.href = url;
             a.download = 'speech.mp3';
             document.body.appendChild(a);
-a.click();
+            a.click();
             window.URL.revokeObjectURL(url);
             a.remove();
         }
