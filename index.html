@@ -322,40 +322,39 @@
 
             const isSSML = elements.ssmlToggle.checked;
             const stylePromptText = elements.stylePromptInput.value.trim();
-            let requestBody;
 
-            const commonVoice = { languageCode: elements.languageSelect.value, name: elements.voiceSelect.value };
-            const commonAudioConfig = {
+            // CORRECTED: Build the voice parameters object first.
+            const voiceParams = {
+                languageCode: elements.languageSelect.value,
+                name: elements.voiceSelect.value
+            };
+
+            // Add stylePrompt to the voice object if it exists.
+            if (stylePromptText) {
+                voiceParams.stylePrompt = stylePromptText;
+            }
+
+            const audioConfig = {
                 audioEncoding: 'MP3',
                 effectsProfileId: elements.effectsProfile.value ? [elements.effectsProfile.value] : undefined,
             };
-            
-            // CORRECTED: The structure for the request body is now built correctly.
-            if (stylePromptText) {
-                // Style prompts cannot be used with SSML.
-                requestBody = {
-                    input: {
-                        textPlusStyleInfo: {
-                            text: text,
-                            stylePrompt: stylePromptText
-                        }
-                    },
-                    voice: commonVoice,
-                    audioConfig: commonAudioConfig
-                };
-            } else {
-                // Standard request for either plain text or SSML.
-                requestBody = {
-                    input: { [isSSML ? 'ssml' : 'text']: text },
-                    voice: commonVoice,
-                    audioConfig: {
-                        ...commonAudioConfig,
-                        speakingRate: isSSML ? undefined : parseFloat(elements.speed.value),
-                        pitch: isSSML ? undefined : parseFloat(elements.pitch.value),
-                        volumeGainDb: isSSML ? undefined : parseFloat(elements.volume.value),
-                    }
-                };
+
+            // Add other audio config options only if not using SSML or style prompts.
+            // The UI already disables these sliders, but this is a safeguard.
+            if (!isSSML && !stylePromptText) {
+                audioConfig.speakingRate = parseFloat(elements.speed.value);
+                audioConfig.pitch = parseFloat(elements.pitch.value);
+                audioConfig.volumeGainDb = parseFloat(elements.volume.value);
             }
+            
+            // The input must be 'text' when using a style prompt. The UI already enforces this.
+            const input = { [isSSML ? 'ssml' : 'text']: text };
+
+            const requestBody = {
+                input: input,
+                voice: voiceParams,
+                audioConfig: audioConfig
+            };
 
             try {
                 const response = await fetch(`https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${apiKey}`, {
@@ -388,7 +387,7 @@
             if (!audioBlob) return;
             const url = URL.createObjectURL(audioBlob);
             const a = document.createElement('a');
-            a.style.display = 'none';
+a.style.display = 'none';
             a.href = url;
             a.download = 'speech.mp3';
             document.body.appendChild(a);
